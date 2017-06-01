@@ -116,13 +116,13 @@ public class EtlBatchConfig {
 	}
 
 	@Bean
-	public BackToBackPatternClassifier eventItemClassifier() {
-		BackToBackPatternClassifier classifier = new BackToBackPatternClassifier();
+	public BackToBackPatternClassifier<CompositeItem, ItemWriter<? super CompositeItem>> eventItemClassifier() {
+		BackToBackPatternClassifier<CompositeItem, ItemWriter<? super CompositeItem>> classifier = new BackToBackPatternClassifier<CompositeItem, ItemWriter<? super CompositeItem>>();
 
 		classifier.setRouterDelegate(eventRouterClassifier);
-		Map<String, ItemWriter<CompositeItem>> map = new HashMap<String, ItemWriter<CompositeItem>>();
-		map.put("event", eventWriter());
-		classifier.setMatcherMap(map);
+//		Map<String, ItemWriter<? super CompositeItem>> map = new HashMap<String, ItemWriter<? super CompositeItem>>();
+//		map.put("event", eventWriter());
+//		classifier.setMatcherMap(map);
 		return classifier;
 	}
 
