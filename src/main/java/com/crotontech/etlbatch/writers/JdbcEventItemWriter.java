@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 
 import com.crotontech.etlbatch.domain.CompositeItem;
 @Component
-public class JdbcItemWriter implements ItemWriter<CompositeItem>{
+public class JdbcEventItemWriter implements ItemWriter<CompositeItem>{
 @Autowired
 private JdbcTemplate jdbcTemplate;
 	public void write(List<? extends CompositeItem> items) throws Exception {

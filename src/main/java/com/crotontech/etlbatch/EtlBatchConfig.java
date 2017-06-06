@@ -1,8 +1,7 @@
 package com.crotontech.etlbatch;
 
 import java.net.MalformedURLException;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Date;
 
 import javax.sql.DataSource;
 
@@ -13,29 +12,32 @@ import org.ektorp.http.HttpClient;
 import org.ektorp.http.StdHttpClient;
 import org.ektorp.impl.StdCouchDbInstance;
 import org.springframework.batch.core.Job;
+import org.springframework.batch.core.JobParameters;
+import org.springframework.batch.core.JobParametersBuilder;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
-import org.springframework.batch.item.ItemProcessor;
-import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.adapter.ItemReaderAdapter;
-import org.springframework.batch.item.database.JdbcBatchItemWriter;
 import org.springframework.batch.item.support.ClassifierCompositeItemWriter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
-import org.springframework.classify.BackToBackPatternClassifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
+import org.springframework.core.task.TaskExecutor;
 
 import com.crotontech.etlbatch.domain.CompositeItem;
 import com.crotontech.etlbatch.listeners.JobCompletionNotificationListener;
+import com.crotontech.etlbatch.processors.ClientProcessor;
 import com.crotontech.etlbatch.processors.EventProcessor;
+import com.crotontech.etlbatch.readers.CouchClientsReader;
 import com.crotontech.etlbatch.readers.CouchEventsReader;
 import com.crotontech.etlbatch.writers.EventRouterClassifier;
+import com.crotontech.etlbatch.writers.JdbcClientItemWriter;
 
 @Configuration
 @EnableAutoConfiguration
@@ -56,22 +58,44 @@ public class EtlBatchConfig {
 
 	@Autowired
 	CouchEventsReader couchEventsReader;
-	
+	@Autowired
+	CouchClientsReader couchClientsReader;
+
 	@Autowired
 	EventProcessor eventProcessor;
 
+	@Autowired
+	ClientProcessor clientProcessor;
+
+	@Autowired
+	JdbcClientItemWriter jdbcClientItemWriter;
+
+	JobParameters parameters = new JobParametersBuilder().addDate("date", new Date()).toJobParameters();
+
 	@Bean
 	public Job importEventsJob(JobCompletionNotificationListener listener) {
-		return jobBuilderFactory.get("importEventsJob").incrementer(new RunIdIncrementer()).listener(listener)
-				.flow(step1()).end().build();
+		return jobBuilderFactory.get("etlJob").incrementer(new RunIdIncrementer()).listener(listener).start(step1())
+				.next(step2()).build();
 	}
 
 	@Bean
 	public Step step1() {
-		return stepBuilderFactory.get("step1").<JSONObject, CompositeItem>chunk(100).reader(eventJsonReader())
-				.processor(eventProcessor).writer(eventItemWriter()).build();
+		return stepBuilderFactory.get("step1").<JSONObject, CompositeItem>chunk(100).reader(clientJsonReader())
+				.processor(clientProcessor).writer(jdbcClientItemWriter).taskExecutor(taskExecutor()).build();
 	}
 
+	@Bean
+	public Step step2() {
+		return stepBuilderFactory.get("step2").<JSONObject, CompositeItem>chunk(100).reader(eventJsonReader())
+				.processor(eventProcessor).writer(eventItemWriter()).taskExecutor(taskExecutor()).build();
+	}
+	@Bean
+	public TaskExecutor taskExecutor(){
+	    SimpleAsyncTaskExecutor asyncTaskExecutor=new SimpleAsyncTaskExecutor(EtlBatchConfig.class.getCanonicalName());
+	    int cores = Runtime.getRuntime().availableProcessors();
+	    asyncTaskExecutor.setConcurrencyLimit(cores);
+	    return asyncTaskExecutor;
+	}
 	@Bean
 	public ItemReaderAdapter<JSONObject> eventJsonReader() {
 		ItemReaderAdapter<JSONObject> readerAdapter = new ItemReaderAdapter<JSONObject>();
@@ -82,14 +106,12 @@ public class EtlBatchConfig {
 	}
 
 	@Bean
-	public ItemProcessor<JSONObject, CompositeItem> eventJsonProcessor() {
-		return null;
-	}
+	public ItemReaderAdapter<JSONObject> clientJsonReader() {
+		ItemReaderAdapter<JSONObject> readerAdapter = new ItemReaderAdapter<JSONObject>();
+		readerAdapter.setTargetObject(couchClientsReader);
+		readerAdapter.setTargetMethod("nextClient");
+		return readerAdapter;
 
-	@Bean
-	public JdbcBatchItemWriter<CompositeItem> eventWriter() {
-
-		return null;
 	}
 
 	@Bean
@@ -115,23 +137,27 @@ public class EtlBatchConfig {
 		return db;
 	}
 
-	@Bean
-	public BackToBackPatternClassifier<CompositeItem, ItemWriter<? super CompositeItem>> eventItemClassifier() {
-		BackToBackPatternClassifier<CompositeItem, ItemWriter<? super CompositeItem>> classifier = new BackToBackPatternClassifier<CompositeItem, ItemWriter<? super CompositeItem>>();
-
-		classifier.setRouterDelegate(eventRouterClassifier);
-//		Map<String, ItemWriter<? super CompositeItem>> map = new HashMap<String, ItemWriter<? super CompositeItem>>();
-//		map.put("event", eventWriter());
-//		classifier.setMatcherMap(map);
-		return classifier;
-	}
+	// @Bean
+	// public BackToBackPatternClassifier<CompositeItem, ItemWriter<? super
+	// CompositeItem>> eventItemClassifier() {
+	// BackToBackPatternClassifier<CompositeItem, ItemWriter<? super
+	// CompositeItem>> classifier = new
+	// BackToBackPatternClassifier<CompositeItem, ItemWriter<? super
+	// CompositeItem>>();
+	//
+	// classifier.setRouterDelegate(eventRouterClassifier);
+	//// Map<String, ItemWriter<? super CompositeItem>> map = new
+	// HashMap<String, ItemWriter<? super CompositeItem>>();
+	//// map.put("event", eventWriter());
+	//// classifier.setMatcherMap(map);
+	// return classifier;
+	// }
 
 	@Bean
 	public ClassifierCompositeItemWriter<CompositeItem> eventItemWriter() {
 		ClassifierCompositeItemWriter<CompositeItem> classifierCompositeItemWriter = new ClassifierCompositeItemWriter<CompositeItem>();
-		classifierCompositeItemWriter.setClassifier(eventItemClassifier());
+		classifierCompositeItemWriter.setClassifier(eventRouterClassifier);
 		return classifierCompositeItemWriter;
 	}
 
-	
 }

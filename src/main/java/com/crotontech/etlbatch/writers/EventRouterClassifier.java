@@ -10,10 +10,12 @@ import org.springframework.stereotype.Component;
 import com.crotontech.etlbatch.domain.CompositeItem;
 
 @Component
-public class EventRouterClassifier {
+public class EventRouterClassifier implements org.springframework.classify.Classifier<CompositeItem, ItemWriter<? super CompositeItem>> {
+	
+	private static final long serialVersionUID = 1L;
 	private static final Logger log = LoggerFactory.getLogger(EventRouterClassifier.class);
 	@Autowired
-	JdbcItemWriter itemWriter;
+	JdbcEventItemWriter itemWriter;
 
 	@Classifier
 	public ItemWriter<? super CompositeItem> classify(CompositeItem classifiable) {

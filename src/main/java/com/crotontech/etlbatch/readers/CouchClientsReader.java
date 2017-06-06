@@ -25,10 +25,10 @@ public class CouchClientsReader implements InitializingBean {
 	}
 
 	public JSONObject nextClient() {
-		if (clients.size() > 0) {
+		if (!clients.isEmpty()) {
 			return clients.remove(0);
 		} else {
-			log.info("Reader: no records found");
+			log.info("CouchClientsReader: no records found");
 			return null;
 		}
 	}
